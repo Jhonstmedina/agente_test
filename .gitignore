@@ -2,4 +2,4 @@ db/
 logs
 v1
 venv
-firebase-credentials.jsonfirebase-credentials.json
+firebase-credentials.json
