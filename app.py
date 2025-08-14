@@ -7,11 +7,13 @@ from flask import Flask, request, jsonify
 from datetime import datetime
 from firebase_admin import credentials, firestore
 from processing.scraper import scrape_and_clean_url
-from processing.chunking import chunk_text_intelligently
-from processing.vector_store import create_and_store_embeddings
+from processing.chunking import chunk_text_intelligently, semantic_chunker
+from processing.vector_store import create_and_store_embeddings, find_relevant_chunks
+from agent.generation import generate_response
+from dotenv import load_dotenv
 from datetime import datetime
 
-# --- Configuración Básica ---
+load_dotenv()
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -67,7 +69,7 @@ def process_documentation():
         })
         return jsonify({"error": f"No se pudo procesar la URL: {url}"}), 500
 
-    text_chunks = chunk_text_intelligently(cleaned_text)
+    text_chunks = semantic_chunker(cleaned_text)
 
     vector_collection = create_and_store_embeddings(text_chunks, chat_id)
     if not vector_collection:
@@ -95,7 +97,6 @@ def process_documentation():
          "chunks_created": len(text_chunks)
     }
     return jsonify(response), 200 # Devolvemos 200 OK porque el proceso ya terminó
-
 
 @app.route('/api/v1/processing-status/<string:chatId>', methods=['GET'])
 def get_processing_status(chatId):
@@ -143,8 +144,16 @@ def chat(chatId):
 
     user_question = data['question']
     logger.info(f"Recibida pregunta para el chat {chatId}: '{user_question}'")
-    
-    # --- INICIO DE LA MODIFICACIÓN ---
+
+    relevant_chunks = find_relevant_chunks(query_text=user_question, chat_id=chatId, n_results=2)
+    if not relevant_chunks:
+        # Si no se encuentra contexto, se puede dar una respuesta genérica.
+        ai_response_content = "Lo siento, no he encontrado información relevante en la documentación para responder a tu pregunta."
+    else:
+        ai_response_content = generate_response(
+            question=user_question, 
+            context_chunks=relevant_chunks
+        )
 
     # 1. Crear el objeto del mensaje del usuario con timestamp
     user_message = {
@@ -159,7 +168,7 @@ def chat(chatId):
     })
     
     # Lógica de IA (a implementar)
-    ai_response_content = f"Respuesta simulada a tu pregunta: '{user_question}'."
+    #ai_response_content = f"Respuesta simulada a tu pregunta: '{user_question}'."
     
     # 2. Crear el objeto del mensaje de la IA con el nuevo rol y timestamp
     ai_message = {
