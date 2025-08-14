@@ -3,3 +3,4 @@ logs
 v1
 venv
 firebase-credentials.json
+.env

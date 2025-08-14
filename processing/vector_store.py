@@ -45,4 +45,39 @@ def create_and_store_embeddings(chunks: list[str], chat_id: str):
     except Exception as e:
         logger.error(f"Error al interactuar con ChromaDB: {e}")
         return None
-    
+
+def find_relevant_chunks(query_text: str, chat_id: str, n_results: int = 3) -> list[str]:
+    """
+    Busca en la colección de ChromaDB los fragmentos de texto más relevantes para una consulta.
+
+    Args:
+        query_text (str): La pregunta o texto de búsqueda del usuario.
+        chat_id (str): El ID del chat para saber en qué colección buscar.
+        n_results (int): El número de fragmentos relevantes a devolver.
+
+    Returns:
+        list[str]: Una lista con los textos de los fragmentos más relevantes.
+    """
+    try:
+        # 1. Obtener la colección existente. Si no existe, no hay nada que buscar.
+        collection = client.get_collection(name=chat_id)
+        
+        # 2. Realizar la consulta (query).
+        # ChromaDB se encarga de:
+        #   a) Convertir el 'query_text' a un embedding.
+        #   b) Buscar los 'n_results' embeddings más cercanos en la colección.
+        results = collection.query(
+            query_texts=[query_text],
+            n_results=n_results
+        )
+        
+        # 3. Extraer el texto de los documentos encontrados.
+        relevant_chunks = results['documents'][0]
+        logger.info(f"Se encontraron {len(relevant_chunks)} chunks relevantes para la consulta en la colección '{chat_id}'.")
+        print(relevant_chunks)
+        return relevant_chunks
+
+    except Exception as e:
+        # Esto puede pasar si la colección no existe (ej. chatId incorrecto)
+        logger.error(f"Error al consultar la colección '{chat_id}' en ChromaDB: {e}")
+        return []
