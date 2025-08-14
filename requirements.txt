@@ -1,0 +1,10 @@
+flask
+flask-cors
+firebase-admin
+requests
+beautifulsoup4
+langchain
+chromadb
+onnxruntime 
+sentence-transformers
+python-dotenv
