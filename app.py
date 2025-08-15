@@ -3,6 +3,7 @@ import os
 import requests
 import pprint
 import uuid
+import threading
 import firebase_admin
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime
@@ -11,10 +12,13 @@ from processing.scraper import scrape_and_clean_url
 from processing.chunking import chunk_text_intelligently, semantic_chunker
 from processing.vector_store import create_and_store_embeddings, find_relevant_chunks
 from agent.generation import generate_response
+from agent.graph import Agent
 from dotenv import load_dotenv
 from datetime import datetime
 
 load_dotenv()
+agent = Agent()
+
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
@@ -47,9 +51,51 @@ def chat_ui():
     """
     return render_template('index.html')
 
+def process_documentation_task(chat_id, url, method):
+    """
+    Esta función se ejecuta en un hilo separado para no bloquear la API.
+    Realiza el scraping, chunking, embedding y actualiza el estado final en Firestore.
+    """
+    logger.info(f"[Thread-{chat_id}] Iniciando tarea de procesamiento.")
+    
+    # El mismo código de procesamiento que teníamos antes
+    cleaned_text = None
+    if method == 'jina':
+        try:
+            response = requests.get(f"https://r.jina.ai/{url}", timeout=60)
+            response.raise_for_status()
+            cleaned_text = response.text
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[Thread-{chat_id}] Error con Jina Reader: {e}")
+    else:
+        cleaned_text = scrape_and_clean_url(url)
+
+    doc_ref = db.collection('chats').document(chat_id)
+
+    if not cleaned_text:
+        logger.error(f"[Thread-{chat_id}] No se pudo extraer texto. Terminando tarea.")
+        doc_ref.update({"status": "Error en el procesamiento", "error_message": "No se pudo extraer contenido."})
+        return
+
+    logger.info(f"[Thread-{chat_id}] Texto extraído. Segmentando...")
+    text_chunks = semantic_chunker(cleaned_text)
+    
+    logger.info(f"[Thread-{chat_id}] Segmentación completa. Almacenando embeddings...")
+    if not create_and_store_embeddings(text_chunks, chat_id):
+        logger.error(f"[Thread-{chat_id}] Error al almacenar embeddings. Terminando tarea.")
+        doc_ref.update({"status": "Error en el procesamiento", "error_message": "Fallo al crear vectores."})
+        return
+        
+    logger.info(f"[Thread-{chat_id}] Tarea completada. Actualizando estado a 'Completado'.")
+    doc_ref.update({"status": "Completado", "chunk_count": len(text_chunks)})
+
 # --- Endpoints de la API v1 ---
 @app.route('/api/v1/process-documentation', methods=['POST'])
 def process_documentation():
+    """
+    Recibe una URL e inicia el procesamiento asíncrono en un hilo.
+    Devuelve una confirmación inmediata.
+    """
     if not db:
         return jsonify({"error": "Servicio de base de datos no disponible."}), 503
 
@@ -59,66 +105,32 @@ def process_documentation():
 
     chat_id = data.get('chatId', str(uuid.uuid4()))
     url = data['url']
-    method = data.get('method', 'custom') 
-    logger.info(f"Solicitud de procesamiento para URL: {url} con chatId: {chat_id}")
-    
-    cleaned_text = None
+    method = data.get('method', 'custom')
 
-    if method == 'jina':
-        try:
-            logger.info(f"Usando Jina Reader para la URL: {url}")
-            jina_url = f"https://r.jina.ai/{url}"
-            response = requests.get(jina_url, timeout=30) # Aumentamos el timeout para Jina
-            response.raise_for_status()
-            cleaned_text = response.text # Jina devuelve el texto limpio directamente
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error al procesar con Jina Reader: {e}")
-            cleaned_text = None
-    else: # Método 'custom' o por defecto
-        logger.info(f"Usando el scraper personalizado para la URL: {url}")
-        cleaned_text = scrape_and_clean_url(url)
-    # NOTA: Esta es una llamada SÍNCRONA. La API esperará a que termine.
-    # Esto se modificará más adelante para ser un proceso asíncrono.
-    
-    if not cleaned_text:
-        # Si el scraping falla, lo registramos en la DB y devolvemos un error.
-        db.collection('chats').document(chat_id).set({
-            "status": "Error en el procesamiento",
-            "history": [],
-            "source_url": url,
-            "error_message": "No se pudo extraer contenido de la URL.",
-            "created_at": firestore.SERVER_TIMESTAMP
-        })
-        return jsonify({"error": f"No se pudo procesar la URL: {url}"}), 500
-
-    text_chunks = semantic_chunker(cleaned_text)
-
-    vector_collection = create_and_store_embeddings(text_chunks, chat_id)
-    if not vector_collection:
-        return jsonify({"error": "Ocurrió un error al almacenar los datos vectoriales."}), 500
-
-
-    doc_ref = db.collection('chats').document(chat_id)
-    doc_ref.set({
-        "status": "Completado", 
-        "history": [],
+    # 1. Crear el documento en Firestore con estado "En progreso"
+    db.collection('chats').document(chat_id).set({
+        "status": "En progreso",
         "source_url": url,
-        "created_at": firestore.SERVER_TIMESTAMP,
-        "processed_text_char_count": len(cleaned_text),
-        "chunk_count": len(text_chunks) # Guardamos el número de chunks generados
+        "history": [],
+        "created_at": firestore.SERVER_TIMESTAMP
     })
-    
-    logger.info(f"Documento {url} procesado y guardado en Firestore para chatId {chat_id}.")
-    
-    # --- FIN DE LA MODIFICACIÓN ---
-    
-    response = {
-        "message": "El procesamiento de la documentación ha sido completado.",
+
+    # 2. Crear y lanzar el hilo para la tarea en segundo plano
+    thread = threading.Thread(
+        target=process_documentation_task, 
+        args=(chat_id, url, method)
+    )
+    thread.start()
+
+    logger.info(f"Lanzado hilo en segundo plano para procesar la URL: {url} (chatId: {chat_id})")
+
+    # 3. Devolver la respuesta inmediata
+    return jsonify({
+        "message": "El procesamiento de la documentación ha comenzado en segundo plano.",
         "chatId": chat_id,
-        "status": "Completado",
-         "chunks_created": len(text_chunks)
-    }
-    return jsonify(response), 200 # Devolvemos 200 OK porque el proceso ya terminó
+        "status": "En progreso"
+    }), 202 # 202 Accepted es el código HTTP correcto para estas operaciones
+
 
 @app.route('/api/v1/processing-status/<string:chatId>', methods=['GET'])
 def get_processing_status(chatId):
@@ -153,58 +165,23 @@ def chat(chatId):
     doc_ref = db.collection('chats').document(chatId)
     doc = doc_ref.get()
 
-    if not doc.exists:
-        return jsonify({"error": "Chat ID no encontrado."}), 404
-
-    chat_data = doc.to_dict()
-    if chat_data.get('status') != 'Completado':
-        return jsonify({"error": "La documentación aún está siendo procesada."}), 425
+    if not doc.exists or doc.to_dict().get('status') != 'Completado':
+        return jsonify({"error": "El chat no está listo o no existe."}), 425
 
     data = request.get_json()
     if not data or 'question' not in data:
-        return jsonify({"error": "Se requiere 'question' en el cuerpo del request."}), 400
+        return jsonify({"error": "Se requiere 'question'."}), 400
 
     user_question = data['question']
     logger.info(f"Recibida pregunta para el chat {chatId}: '{user_question}'")
-
-    relevant_chunks = find_relevant_chunks(query_text=user_question, chat_id=chatId, n_results=2)
-    if not relevant_chunks:
-        # Si no se encuentra contexto, se puede dar una respuesta genérica.
-        ai_response_content = "Lo siento, no he encontrado información relevante en la documentación para responder a tu pregunta."
-    else:
-        ai_response_content = generate_response(
-            question=user_question, 
-            context_chunks=relevant_chunks
-        )
-
-    # 1. Crear el objeto del mensaje del usuario con timestamp
-    user_message = {
-        "role": "user",
-        "content": user_question,
-        "timestamp": datetime.utcnow().isoformat() + "Z" # Añade timestamp en formato UTC
-    }
     
-    # Añadir el mensaje del usuario al historial en Firestore
-    doc_ref.update({
-        "history": firestore.ArrayUnion([user_message])
-    })
+    final_state = agent.invoke(user_question, chatId)
+    ai_response_content = final_state.get("answer", "No se pudo generar una respuesta.")
     
-    # Lógica de IA (a implementar)
-    #ai_response_content = f"Respuesta simulada a tu pregunta: '{user_question}'."
+    user_message = {"role": "user", "content": user_question, "timestamp": datetime.utcnow().isoformat() + "Z"}
+    ai_message = {"role": "IA", "content": ai_response_content, "timestamp": datetime.utcnow().isoformat() + "Z"}
     
-    # 2. Crear el objeto del mensaje de la IA con el nuevo rol y timestamp
-    ai_message = {
-        "role": "IA",  # <-- ROL CAMBIADO de "assistant" a "IA"
-        "content": ai_response_content,
-        "timestamp": datetime.utcnow().isoformat() + "Z" # Añade timestamp en formato UTC
-    }
-    
-    # Añadir el mensaje de la IA al historial en Firestore
-    doc_ref.update({
-        "history": firestore.ArrayUnion([ai_message])
-    })
-    
-    # --- FIN DE LA MODIFICACIÓN ---
+    doc_ref.update({"history": firestore.ArrayUnion([user_message, ai_message])})
     
     return jsonify({"answer": ai_response_content})
 
