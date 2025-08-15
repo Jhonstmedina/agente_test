@@ -1,9 +1,10 @@
 import logging
 import os
+import requests
 import pprint
 import uuid
 import firebase_admin
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from datetime import datetime
 from firebase_admin import credentials, firestore
 from processing.scraper import scrape_and_clean_url
@@ -39,8 +40,14 @@ except Exception as e:
 app = Flask(__name__)
 logger.info("Aplicación Flask inicializada.")
 
-# --- Endpoints de la API v1 ---
+@app.route('/')
+def chat_ui():
+    """
+    Renderiza la plantilla HTML de la interfaz de chat.
+    """
+    return render_template('index.html')
 
+# --- Endpoints de la API v1 ---
 @app.route('/api/v1/process-documentation', methods=['POST'])
 def process_documentation():
     if not db:
@@ -52,12 +59,27 @@ def process_documentation():
 
     chat_id = data.get('chatId', str(uuid.uuid4()))
     url = data['url']
-    
+    method = data.get('method', 'custom') 
     logger.info(f"Solicitud de procesamiento para URL: {url} con chatId: {chat_id}")
+    
+    cleaned_text = None
 
+    if method == 'jina':
+        try:
+            logger.info(f"Usando Jina Reader para la URL: {url}")
+            jina_url = f"https://r.jina.ai/{url}"
+            response = requests.get(jina_url, timeout=30) # Aumentamos el timeout para Jina
+            response.raise_for_status()
+            cleaned_text = response.text # Jina devuelve el texto limpio directamente
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error al procesar con Jina Reader: {e}")
+            cleaned_text = None
+    else: # Método 'custom' o por defecto
+        logger.info(f"Usando el scraper personalizado para la URL: {url}")
+        cleaned_text = scrape_and_clean_url(url)
     # NOTA: Esta es una llamada SÍNCRONA. La API esperará a que termine.
     # Esto se modificará más adelante para ser un proceso asíncrono.
-    cleaned_text = scrape_and_clean_url(url)
+    
     if not cleaned_text:
         # Si el scraping falla, lo registramos en la DB y devolvemos un error.
         db.collection('chats').document(chat_id).set({
@@ -203,6 +225,33 @@ def get_chat_history(chatId):
     chat_data = doc.to_dict()
     history = chat_data.get('history', [])
     return jsonify({"chatId": chatId, "history": history})
+
+@app.route('/api/v1/chats', methods=['GET'])
+def get_chats():
+    """
+    Devuelve una lista de todas las sesiones de chat procesadas.
+    """
+    if not db:
+        return jsonify({"error": "Servicio de base de datos no disponible."}), 503
+    
+    try:
+        chats_ref = db.collection('chats').stream()
+        all_chats = []
+        for chat in chats_ref:
+            chat_data = chat.to_dict()
+            all_chats.append({
+                "chatId": chat.id,
+                "source_url": chat_data.get("source_url", "URL no disponible"),
+                "status": chat_data.get("status", "desconocido"),
+                # Opcional: añadir fecha de creación si la guardas
+                # "created_at": chat_data.get("created_at")
+            })
+        
+        logger.info(f"Se recuperaron {len(all_chats)} chats existentes.")
+        return jsonify(all_chats)
+    except Exception as e:
+        logger.error(f"Error al recuperar la lista de chats: {e}")
+        return jsonify({"error": "No se pudieron recuperar las sesiones de chat."}), 500
 
 # --- Manejo de Errores y Ejecución ---
 @app.errorhandler(404)

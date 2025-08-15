@@ -4,10 +4,13 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 import google.generativeai as genai
+from dotenv import load_dotenv
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-GEMINI_API_KEY = "AIzaSyB9Ki-Hi40fqst4JfNCFf1_Zxv2q9xVfJ0"
+GEMINI_API_KEY = os.getenv('GOOGLE_API_KEY')
+
 genai.configure(api_key=GEMINI_API_KEY)
 
 def generate_response(question: str, context_chunks: list[str]) -> str:

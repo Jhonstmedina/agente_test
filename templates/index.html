@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agente RAG de Documentación</title>
+    
+    <style>
+        :root {
+            --background-color: #1a1a2c;
+            --surface-color: #24243e;
+            --primary-color: #6c5ce7;
+            --primary-hover-color: #8a7ff9;
+            --text-color: #e0e0e0;
+            --text-secondary-color: #a0a0b8;
+            --border-color: #444466;
+        }
+
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 800px;
+            background: var(--surface-color);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            padding: 2rem;
+            transition: all 0.3s ease;
+        }
+
+        h1, h2, h3 { color: white; }
+        h1 { text-align: center; margin-bottom: 0.5rem; }
+        h2 { border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-top: 2rem; }
+        p { color: var(--text-secondary-color); }
+
+        input[type="url"], input[type="text"] {
+            width: calc(100% - 24px);
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 1rem;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            transition: border-color 0.3s ease;
+        }
+        input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        button {
+            padding: 12px 20px;
+            background-image: linear-gradient(45deg, var(--primary-color) 0%, #a059f1 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(108, 92, 231, 0.4);
+        }
+        button:disabled {
+            background-image: none;
+            background-color: #555;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .hidden { display: none; }
+
+        .chat-item, #method-choice-dialog {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+        }
+        #method-choice-dialog {
+            text-align: center;
+            background-color: var(--background-color);
+        }
+        #method-choice-dialog .btn-group {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        .secondary-btn {
+            background-image: none;
+            background-color: #3e3e5b;
+        }
+
+        #status-bar { text-align: center; margin: 1rem 0; font-weight: 500; color: var(--text-secondary-color); }
+        
+        #chat-window {
+            height: 450px;
+            background-color: var(--background-color);
+            border: 1px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chat-input-container { display: flex; gap: 10px; }
+        #chat-input { flex-grow: 1; margin-top: 10px; }
+
+        .message {
+            padding: 10px 15px;
+            border-radius: 18px;
+            max-width: 75%;
+            margin-bottom: 10px;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        .user-message {
+            background-image: linear-gradient(45deg, var(--primary-color) 0%, #a059f1 100%);
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+        .ia-message {
+            background-color: #3e3e5b;
+            color: var(--text-color);
+            align-self: flex-start;
+            white-space: pre-wrap;
+            border-bottom-left-radius: 4px;
+        }
+
+        #previous-chats-section { margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1rem; }
+        
+        .chat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            margin-bottom: 10px;
+            transition: background-color 0.3s ease;
+        }
+        .chat-item:hover { background-color: rgba(255, 255, 255, 0.05); }
+
+        .chat-info { flex-grow: 1; overflow: hidden; }
+        .chat-info .url { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-color); }
+        .chat-info .status { font-size: 0.9em; color: var(--text-secondary-color); }
+        .chat-actions button { margin-top: 0; margin-left: 10px; padding: 8px 12px; font-size: 0.9rem; }
+        
+        .loading-dot {
+            display: inline-block; width: 8px; height: 8px;
+            background-color: var(--text-secondary-color); border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out both;
+        }
+        .loading-dot:nth-child(1) { animation-delay: -0.32s; }
+        .loading-dot:nth-child(2) { animation-delay: -0.16s; }
+        @keyframes bounce { 0%, 80%, 100% { transform: scale(0); } 40% { transform: scale(1.0); } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="main-view">
+            <h1>Agente RAG de Documentación</h1>
+            <div id="url-section">
+                <p>Introduce una nueva URL para procesar.</p>
+                <input type="url" id="doc-url" placeholder="https://ejemplo.com/docs">
+                <button id="process-btn">Procesar Documentación</button>
+            </div>
+            <div id="method-choice-dialog" class="hidden">
+                <h3>Elige un método de procesamiento</h3>
+                <p>Elige cómo quieres extraer el contenido de la URL.</p>
+                <div class="btn-group">
+                    <button id="method-custom-btn" class="secondary-btn">Estándar</button>
+                    <button id="method-jina-btn">Con IA (Jina)</button>
+                </div>
+            </div>
+            <div id="previous-chats-section">
+                <h2>Sesiones Anteriores</h2>
+                <div id="chats-list"><p>Cargando sesiones...</p></div>
+            </div>
+        </div>
+        <div id="chat-section" class="hidden">
+            <div id="status-bar"></div>
+            <div id="chat-window"></div>
+            <div id="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Haz una pregunta sobre la documentación..." disabled>
+                <button id="send-btn" disabled>Enviar</button>
+            </div>
+            <button id="back-btn" class="secondary-btn">Volver a la Lista</button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Referencias a elementos del DOM
+            const mainView = document.getElementById('main-view');
+            const chatSection = document.getElementById('chat-section');
+            const processBtn = document.getElementById('process-btn');
+            const docUrlInput = document.getElementById('doc-url');
+            const statusBar = document.getElementById('status-bar');
+            const chatWindow = document.getElementById('chat-window');
+            const chatInput = document.getElementById('chat-input');
+            const sendBtn = document.getElementById('send-btn');
+            const chatsListDiv = document.getElementById('chats-list');
+            const backBtn = document.getElementById('back-btn');
+            const methodChoiceDialog = document.getElementById('method-choice-dialog');
+            const methodCustomBtn = document.getElementById('method-custom-btn');
+            const methodJinaBtn = document.getElementById('method-jina-btn');
+
+            let chatId = null;
+            let tempUrl = null;
+
+            // --- Lógica de Arranque ---
+            loadPreviousChats();
+
+            // --- Manejadores de Eventos Principales ---
+            processBtn.addEventListener('click', () => {
+                const url = docUrlInput.value;
+                if (!url.startsWith('http')) {
+                    alert('Por favor, introduce una URL válida.');
+                    return;
+                }
+                tempUrl = url;
+                docUrlInput.disabled = true;
+                processBtn.disabled = true;
+                methodChoiceDialog.classList.remove('hidden');
+            });
+
+            methodCustomBtn.addEventListener('click', () => startProcessing(tempUrl, 'custom'));
+            methodJinaBtn.addEventListener('click', () => startProcessing(tempUrl, 'jina'));
+
+            backBtn.addEventListener('click', () => {
+                chatSection.classList.add('hidden');
+                mainView.classList.remove('hidden');
+                docUrlInput.disabled = false;
+                docUrlInput.value = '';
+                processBtn.disabled = false;
+                loadPreviousChats();
+            });
+
+            sendBtn.addEventListener('click', sendMessage);
+            chatInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+
+            // --- Funciones de Lógica de Aplicación ---
+            async function loadPreviousChats() {
+                try {
+                    const response = await fetch('/api/v1/chats');
+                    if (!response.ok) throw new Error('No se pudo conectar con el servidor.');
+                    const chats = await response.json();
+                    
+                    chatsListDiv.innerHTML = '';
+                    if (chats.length === 0) {
+                        chatsListDiv.innerHTML = '<p>No hay sesiones anteriores.</p>';
+                        return;
+                    }
+
+                    chats.forEach(chat => {
+                        const item = document.createElement('div');
+                        item.className = 'chat-item';
+                        item.innerHTML = `
+                            <div class="chat-info">
+                                <p class="url">${chat.source_url}</p>
+                                <p class="status">Estado: ${chat.status}</p>
+                            </div>
+                            <div class="chat-actions">
+                                <button class="view-history-btn secondary-btn" data-chatid="${chat.chatId}">Ver Historial</button>
+                                <button class="start-chat-btn" data-chatid="${chat.chatId}" ${chat.status !== 'Completado' ? 'disabled' : ''}>Iniciar Chat</button>
+                            </div>
+                        `;
+                        chatsListDiv.appendChild(item);
+                    });
+
+                    document.querySelectorAll('.start-chat-btn').forEach(btn => btn.addEventListener('click', handleStartChat));
+                    document.querySelectorAll('.view-history-btn').forEach(btn => btn.addEventListener('click', handleViewHistory));
+                } catch (error) {
+                    chatsListDiv.innerHTML = `<p>Error al cargar las sesiones: ${error.message}</p>`;
+                }
+            }
+
+            async function startProcessing(url, method) {
+                methodChoiceDialog.classList.add('hidden');
+                switchToChatView(`Procesando con método '${method}'... ⏳`, false);
+
+                try {
+                    const response = await fetch('/api/v1/process-documentation', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url, method })
+                    });
+                    if (!response.ok) {
+                         const errData = await response.json();
+                         throw new Error(errData.error || 'Error al iniciar el procesamiento.');
+                    }
+                    const data = await response.json();
+                    chatId = data.chatId;
+                    pollStatus();
+                } catch (error) {
+                    statusBar.textContent = `Error: ${error.message}`;
+                    backBtn.classList.remove('hidden'); // Permitir volver
+                }
+            }
+
+            function pollStatus() {
+                const interval = setInterval(async () => {
+                    try {
+                        const response = await fetch(`/api/v1/processing-status/${chatId}`);
+                        const data = await response.json();
+
+                        if (data.status === 'Completado') {
+                            clearInterval(interval);
+                            statusBar.textContent = `Documentación procesada. ¡Listo para chatear!`;
+                            chatInput.disabled = false;
+                            sendBtn.disabled = false;
+                            chatInput.focus();
+                        } else if (data.status.startsWith('Error')) {
+                            clearInterval(interval);
+                            statusBar.textContent = `Error en el procesamiento: ${data.status}`;
+                        }
+                    } catch (error) {
+                        clearInterval(interval);
+                        statusBar.textContent = 'Error al consultar el estado.';
+                    }
+                }, 3000);
+            }
+
+            async function sendMessage() {
+                const question = chatInput.value.trim();
+                if (!question) return;
+
+                displayMessage(question, 'user');
+                chatInput.value = '';
+                chatInput.disabled = true;
+                sendBtn.disabled = true;
+                displayLoadingIndicator();
+
+                try {
+                    const response = await fetch(`/api/v1/chat/${chatId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ question })
+                    });
+                    if (!response.ok) throw new Error('El servidor devolvió un error.');
+                    const data = await response.json();
+                    
+                    removeLoadingIndicator();
+                    displayMessage(data.answer, 'ia');
+                } catch (error) {
+                    removeLoadingIndicator();
+                    displayMessage(`Error al obtener la respuesta: ${error.message}`, 'ia');
+                } finally {
+                    chatInput.disabled = false;
+                    sendBtn.disabled = false;
+                    chatInput.focus();
+                }
+            }
+            
+            function handleStartChat(event) {
+                chatId = event.target.dataset.chatid;
+                switchToChatView(`Chat listo para la URL procesada.`);
+                chatInput.focus();
+            }
+
+            async function handleViewHistory(event) {
+                chatId = event.target.dataset.chatid;
+                switchToChatView(`Cargando historial...`);
+                
+                try {
+                    const response = await fetch(`/api/v1/chat-history/${chatId}`);
+                    const data = await response.json();
+                    chatWindow.innerHTML = '';
+                    statusBar.textContent = `Historial del chat recuperado.`
+                    if (data.history && data.history.length > 0) {
+                        data.history.forEach(msg => {
+                            displayMessage(msg.content, msg.role.toLowerCase() === 'ia' ? 'ia' : 'user');
+                        });
+                    } else {
+                        displayMessage('Este chat no tiene historial. ¡Haz una pregunta para empezar!', 'ia');
+                    }
+                    chatInput.disabled = false;
+                    sendBtn.disabled = false;
+                    chatInput.focus();
+                } catch (error) {
+                    statusBar.textContent = 'Error al cargar el historial.';
+                }
+            }
+            
+            // --- Funciones de Ayuda para la UI ---
+            function switchToChatView(statusText, enableChat = true) {
+                mainView.classList.add('hidden');
+                chatSection.classList.remove('hidden');
+                statusBar.textContent = statusText;
+                chatWindow.innerHTML = '';
+                chatInput.disabled = !enableChat;
+                sendBtn.disabled = !enableChat;
+            }
+
+            function displayMessage(text, sender) {
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('message', `${sender}-message`);
+                messageDiv.textContent = text;
+                chatWindow.appendChild(messageDiv);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+
+            function displayLoadingIndicator() {
+                const loadingDiv = document.createElement('div');
+                loadingDiv.id = 'loading-indicator';
+                loadingDiv.classList.add('message', 'ia-message');
+                loadingDiv.innerHTML = '<div class="loading-dot"></div><div class="loading-dot"></div><div class="loading-dot"></div>';
+                chatWindow.appendChild(loadingDiv);
+                chatWindow.scrollTop = chatWindow.scrollHeight;
+            }
+
+            function removeLoadingIndicator() {
+                const indicator = document.getElementById('loading-indicator');
+                if (indicator) indicator.remove();
+            }
+        });
+    </script>
+</body>
+</html>
