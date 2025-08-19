@@ -1,26 +1,32 @@
+# cloudbuild.yaml
+
 steps:
-  # 1. Construir la imagen del contenedor Docker
-  - name: 'gcr.io/cloud-builders/docker'
+  # 1. [NUEVO] Inyectar secretos desde Secret Manager a archivos
+  - name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
     args:
-      - 'build'
-      - '-t'
-      - 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}'
-      - '.'
+      - '-c'
+      - |
+        gcloud secrets versions access latest --secret=GOOGLE_API_KEY --format='get(payload.data)' | base64 -d > .env
+        gcloud secrets versions access latest --secret=firebase-credentials --format='get(payload.data)' | base64 -d > firebase-credentials.json
+    id: 'Fetch Secrets'
+
+  # 2. Construir la imagen del contenedor Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}', '.']
     id: 'Build'
 
-  # 2. Subir la imagen a Google Container Registry (GCR)
+  # 3. Subir la imagen a Google Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}'
+    args: ['push', 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}']
     id: 'Push'
 
-  # 3. Desplegar la imagen en Cloud Run
+  # 4. Desplegar la imagen en Cloud Run
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'agente-ia-docs' # <-- Nombre de tu servicio en Cloud Run
+      - 'agente-ia-docs'
       - '--image'
       - 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}'
       - '--region'
@@ -31,7 +37,6 @@ steps:
       - '--quiet'
     id: 'Deploy'
 
-# Especifica la imagen final para que aparezca en los detalles de la compilación.
 images:
   - 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}'
 

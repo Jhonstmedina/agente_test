@@ -1,0 +1,14 @@
+.gitignore
+.dockerignore
+Dockerfile
+cloudbuild.yaml
+README.md
+venv/
+db/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+firebase-credentials.json
