@@ -16,12 +16,11 @@ steps:
     id: 'Push'
 
   # 3. Desplegar la imagen en Cloud Run
-  - name: 'gcr.io/google-appengine/exec-wrapper'
+  - name: 'gcr.io/cloud-builders/gcloud'
     args:
-      - 'gcloud'
       - 'run'
       - 'deploy'
-      - 'agente-ia-docs'
+      - 'agente-ia-docs' # <-- Nombre de tu servicio en Cloud Run
       - '--image'
       - 'gcr.io/$PROJECT_ID/agente-ia-docs:${COMMIT_SHA}'
       - '--region'
