@@ -236,7 +236,7 @@ def not_found(e):
     return jsonify({"error": "Endpoint no encontrado"}), 404
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 8080))
     debug = os.environ.get("DEBUG", "False").lower() == "true"
     
     logger.info(f"Iniciando API en http://0.0.0.0:{port} con modo debug: {debug}")
