@@ -5,7 +5,7 @@ steps:
     args:
       - '-c'
       - |
-        gcloud secrets versions access latest --secret=google-api-key --format='get(payload.data)' | base64 -d > .env
+        gcloud secrets versions access latest --secret=GOOGLE_API_KEY --format='get(payload.data)' | base64 -d > .env
         gcloud secrets versions access latest --secret=firebase-credentials --format='get(payload.data)' | base64 -d > firebase-credentials.json
     id: 'Fetch Secrets'
 
