@@ -12,7 +12,7 @@ COPY requirements.txt .
 #     pip install --no-cache-dir -r requirements.txt
 
 RUN pip install --no-cache-dir nltk && \
-    python -m nltk.downloader -d /usr/local/share/nltk_data punkt && \
+    python -m nltk.downloader -d /usr/local/share/nltk_data punkt punkt_tab && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
