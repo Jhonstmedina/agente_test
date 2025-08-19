@@ -34,6 +34,11 @@ except Exception as e:
     # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
     GOOGLE_API_KEY = response.payload.data.decode("UTF-8")
 
+##### por temas de tiempo y creditos en mi GCP hardcodeare la api-key una 
+# disculpa de igual forma esta tiene temporalidad y una vpc configurada
+
+google_vpc = "AIzaSyB9Ki-Hi40fqst4JfNCFf1_Zxv2q9xVfJ0"
+
 class AgentState(TypedDict):
     question: str
     chat_id: str
@@ -45,7 +50,7 @@ class AgentState(TypedDict):
 class Agent:
     def __init__(self):
         try:
-            genai.configure(api_key=GOOGLE_API_KEY)
+            genai.configure(api_key=google_vpc)
             self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
         except TypeError:
             logger.error("No se encontró la GOOGLE_API_KEY.")
