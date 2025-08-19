@@ -44,13 +44,14 @@ logger = logging.getLogger(__name__)
 
 db = None
 try:
-    PROJECT_ID = os.getenv('adi-cla')
-    SECRET_NAME = os.getenv('firebase-credentials')
+    PROJECT_ID = 'adi-cla'
+    SECRET_NAME = 'firebase-credentials'
 
     #if PROJECT_ID and SECRET_NAME:
     logger.info("Cargando credenciales de Firebase desde Secret Manager...")
     client = secretmanager.SecretManagerServiceClient()
-    secret_version_name = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
+    secret_version_name = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/1"
+    
     response = client.access_secret_version(name=secret_version_name)
     
     # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
@@ -61,6 +62,7 @@ try:
     firebase_admin.initialize_app(cred)
     db = firestore.client()
     logger.info("Conexión con Firebase Firestore establecida desde Secret Manager.")
+
     # else:
     #     # Fallback para desarrollo local usando el archivo
     #     logger.info("Usando archivo local firebase-credentials.json para desarrollo.")
@@ -73,6 +75,18 @@ try:
         
 except Exception as e:
     logger.error(f"Error CRÍTICO al inicializar Firebase: {e}")
+    client = secretmanager.SecretManagerServiceClient()
+    secret_version_name = "projects/564961795889/secrets/firebase-credentials/versions/1"
+    
+    response = client.access_secret_version(name=secret_version_name)
+    
+    # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
+    secret_payload_str = response.payload.data.decode("UTF-8")
+    credentials_dict = json.loads(secret_payload_str)
+
+    cred = credentials.Certificate(credentials_dict)
+    firebase_admin.initialize_app(cred)
+    db = firestore.client()
 
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
