@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 load_dotenv()
-agent = Agent()
+# agent = Agent()
 
 os.makedirs("logs", exist_ok=True)
 logging.basicConfig(
@@ -43,6 +43,24 @@ except Exception as e:
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
 logger.info("Aplicación Flask inicializada.")
+
+agent = None 
+_agent_initialized = False
+_lock = threading.Lock()
+
+@app.before_request
+def initialize_agent():
+    """
+    Inicializa el agente de IA pesado solo una vez, de forma segura para hilos.
+    Se ejecuta antes de cada petición, pero el código de inicialización solo corre en la primera.
+    """
+    global agent, _agent_initialized
+    with _lock:
+        if not _agent_initialized:
+            logger.info("Inicializando el agente de IA por primera vez...")
+            agent = Agent()
+            _agent_initialized = True
+            logger.info("Agente de IA inicializado y listo.")
 
 @app.route('/')
 def chat_ui():
