@@ -13,3 +13,4 @@ nltk
 gunicorn
 langchain-google-genai
 google-generativeai
+google-cloud-secret-manager

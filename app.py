@@ -5,9 +5,11 @@ import pprint
 import uuid
 import threading
 import firebase_admin
+import json
 from flask import Flask, request, jsonify, render_template
 from datetime import datetime
 from firebase_admin import credentials, firestore
+from google.cloud import secretmanager
 from processing.scraper import scrape_and_clean_url
 from processing.chunking import chunk_text_intelligently, semantic_chunker
 from processing.vector_store import create_and_store_embeddings, find_relevant_chunks
@@ -31,14 +33,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --- Inicialización de Firebase ---
+# try:
+#     cred = credentials.Certificate("firebase-credentials.json")
+#     firebase_admin.initialize_app(cred)
+#     db = firestore.client()
+#     logger.info("Conexión con Firebase Firestore establecida.")
+# except Exception as e:
+#     logger.error(f"Error al inicializar Firebase: {e}")
+#     db = None
+
+db = None
 try:
-    cred = credentials.Certificate("firebase-credentials.json")
+    PROJECT_ID = os.getenv('adi-cla')
+    SECRET_NAME = os.getenv('firebase-credentials')
+
+    #if PROJECT_ID and SECRET_NAME:
+    logger.info("Cargando credenciales de Firebase desde Secret Manager...")
+    client = secretmanager.SecretManagerServiceClient()
+    secret_version_name = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
+    response = client.access_secret_version(name=secret_version_name)
+    
+    # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
+    secret_payload_str = response.payload.data.decode("UTF-8")
+    credentials_dict = json.loads(secret_payload_str)
+
+    cred = credentials.Certificate(credentials_dict)
     firebase_admin.initialize_app(cred)
     db = firestore.client()
-    logger.info("Conexión con Firebase Firestore establecida.")
+    logger.info("Conexión con Firebase Firestore establecida desde Secret Manager.")
+    # else:
+    #     # Fallback para desarrollo local usando el archivo
+    #     logger.info("Usando archivo local firebase-credentials.json para desarrollo.")
+    #     base_dir = os.path.abspath(os.path.dirname(__file__))
+    #     credentials_path = os.path.join(base_dir, "firebase-credentials.json")
+    #     cred = credentials.Certificate(credentials_path)
+    #     firebase_admin.initialize_app(cred)
+    #     db = firestore.client()
+    #     logger.info("Conexión con Firebase Firestore establecida desde archivo local.")
+        
 except Exception as e:
-    logger.error(f"Error al inicializar Firebase: {e}")
-    db = None
+    logger.error(f"Error CRÍTICO al inicializar Firebase: {e}")
 
 # --- Inicialización de la Aplicación Flask ---
 app = Flask(__name__)
