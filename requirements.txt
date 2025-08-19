@@ -11,3 +11,4 @@ python-dotenv
 langgraph
 nltk
 gunicorn
+langchain-google-genai
