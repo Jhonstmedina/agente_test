@@ -9,3 +9,4 @@ onnxruntime
 sentence-transformers
 python-dotenv
 langgraph
+nltk
