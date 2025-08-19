@@ -12,3 +12,4 @@ langgraph
 nltk
 gunicorn
 langchain-google-genai
+google-generativeai
