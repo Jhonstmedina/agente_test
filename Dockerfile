@@ -7,8 +7,12 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Instala explícitamente nltk, descarga sus datos y luego el resto de dependencias.
+# RUN pip install --no-cache-dir nltk && \
+#     python -m nltk.downloader punkt && \
+#     pip install --no-cache-dir -r requirements.txt
+
 RUN pip install --no-cache-dir nltk && \
-    python -m nltk.downloader punkt && \
+    python -m nltk.downloader -d /usr/local/share/nltk_data punkt && \
     pip install --no-cache-dir -r requirements.txt
 
 COPY . .
