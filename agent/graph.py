@@ -5,9 +5,34 @@ import google.generativeai as genai
 from langgraph.graph import StateGraph, END
 from processing.vector_store import find_relevant_chunks
 from dotenv import load_dotenv
+from google.cloud import secretmanager
 
 load_dotenv()
 logger = logging.getLogger(__name__)
+
+try:
+    PROJECT_ID = 'adi-cla'
+    SECRET_NAME = 'firebase-credentials'
+
+    #if PROJECT_ID and SECRET_NAME:
+    logger.info("Cargando credenciales de Firebase desde Secret Manager...")
+    client = secretmanager.SecretManagerServiceClient()
+    secret_version_name = f"projects/{PROJECT_ID}/secrets/{SECRET_NAME}/versions/1"
+    
+    response = client.access_secret_version(name=secret_version_name)
+    
+    # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
+    GOOGLE_API_KEY = response.payload.data.decode("UTF-8")
+
+except Exception as e:
+    logger.error(f"Error CRÍTICO al inicializar Firebase: {e}")
+    client = secretmanager.SecretManagerServiceClient()
+    secret_version_name = "projects/564961795889/secrets/firebase-credentials/versions/1"
+    
+    response = client.access_secret_version(name=secret_version_name)
+    
+    # El secreto se decodifica de bytes a string y luego se carga como un diccionario JSON
+    GOOGLE_API_KEY = response.payload.data.decode("UTF-8")
 
 class AgentState(TypedDict):
     question: str
@@ -20,7 +45,7 @@ class AgentState(TypedDict):
 class Agent:
     def __init__(self):
         try:
-            genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+            genai.configure(api_key=GOOGLE_API_KEY)
             self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
         except TypeError:
             logger.error("No se encontró la GOOGLE_API_KEY.")
