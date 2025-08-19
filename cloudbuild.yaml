@@ -32,8 +32,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      # [CORRECCIÓN] Aumentamos la memoria asignada al servicio a 1 Gibibyte.
       - '--memory=1Gi'
+      - '--min-instances=1'
       - '--quiet'
     id: 'Deploy'
 
