@@ -117,43 +117,54 @@ def chat_ui():
     """
     return render_template('index.html')
 
+# app.py (reemplaza esta función)
+
 def process_documentation_task(chat_id, url, method):
     """
-    Esta función se ejecuta en un hilo separado para no bloquear la API.
-    Realiza el scraping, chunking, embedding y actualiza el estado final en Firestore.
+    Esta función se ejecuta en un hilo separado. Ahora incluye todos los
+    campos de datos al guardar en Firestore y un manejo de errores robusto.
     """
     logger.info(f"[Thread-{chat_id}] Iniciando tarea de procesamiento.")
-    
-    # El mismo código de procesamiento que teníamos antes
-    cleaned_text = None
-    if method == 'jina':
-        try:
-            response = requests.get(f"https://r.jina.ai/{url}", timeout=60)
-            response.raise_for_status()
-            cleaned_text = response.text
-        except requests.exceptions.RequestException as e:
-            logger.error(f"[Thread-{chat_id}] Error con Jina Reader: {e}")
-    else:
-        cleaned_text = scrape_and_clean_url(url)
-
     doc_ref = db.collection('chats').document(chat_id)
 
-    if not cleaned_text:
-        logger.error(f"[Thread-{chat_id}] No se pudo extraer texto. Terminando tarea.")
-        doc_ref.update({"status": "Error en el procesamiento", "error_message": "No se pudo extraer contenido."})
-        return
+    try:
+        cleaned_text = None
+        if method == 'jina':
+            try:
+                response = requests.get(f"https://r.jina.ai/{url}", timeout=60)
+                response.raise_for_status()
+                cleaned_text = response.text
+            except requests.exceptions.RequestException as e:
+                logger.error(f"[Thread-{chat_id}] Error con Jina Reader: {e}")
+        else:
+            cleaned_text = scrape_and_clean_url(url)
 
-    logger.info(f"[Thread-{chat_id}] Texto extraído. Segmentando...")
-    text_chunks = semantic_chunker(cleaned_text)
-    
-    logger.info(f"[Thread-{chat_id}] Segmentación completa. Almacenando embeddings...")
-    if not create_and_store_embeddings(text_chunks, chat_id):
-        logger.error(f"[Thread-{chat_id}] Error al almacenar embeddings. Terminando tarea.")
-        doc_ref.update({"status": "Error en el procesamiento", "error_message": "Fallo al crear vectores."})
-        return
+        if not cleaned_text:
+            raise ValueError("No se pudo extraer texto de la URL.")
+
+        text_chunks = semantic_chunker(cleaned_text)
         
-    logger.info(f"[Thread-{chat_id}] Tarea completada. Actualizando estado a 'Completado'.")
-    doc_ref.update({"status": "Completado", "chunk_count": len(text_chunks)})
+        if not create_and_store_embeddings(text_chunks, chat_id):
+            raise RuntimeError("Fallo al crear y almacenar los vectores de embeddings.")
+            
+        final_data = {
+            "status": "Completado",
+            "chunk_count": len(text_chunks),
+            "processed_text_char_count": len(cleaned_text),
+            "finished_at": firestore.SERVER_TIMESTAMP 
+        }
+
+        doc_ref.update(final_data)
+        logger.info(f"[Thread-{chat_id}] Tarea completada exitosamente.")
+
+    except Exception as e:
+        error_message = f"Falló la tarea en segundo plano: {e}"
+        logger.error(f"[Thread-{chat_id}] {error_message}", exc_info=True)
+        
+        doc_ref.update({
+            "status": "Error en el procesamiento",
+            "error_message": error_message
+        })
 
 # --- Endpoints de la API v1 ---
 @app.route('/api/v1/process-documentation', methods=['POST'])
