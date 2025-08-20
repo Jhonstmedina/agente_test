@@ -5,7 +5,21 @@ logger = logging.getLogger(__name__)
 
 # Inicializa el cliente de ChromaDB para que guarde los datos en el disco
 # en una carpeta llamada 'db' en la raíz del proyecto.
-client = chromadb.PersistentClient(path="./db")
+#client = chromadb.PersistentClient(path="./db")
+
+client = None
+
+try:
+    # Lee la URL completa desde la variable de entorno
+    CHROMA_SERVER_URL = 'https://playground.androide.tech/chromadb_server/'
+    if CHROMA_SERVER_URL:
+        client = chromadb.HttpClient(url=CHROMA_SERVER_URL)
+        client.heartbeat() # Verifica la conexión
+        logger.info(f"Conectado al servidor de ChromaDB en {CHROMA_SERVER_URL}.")
+    else:
+        logger.warning("Variable de entorno CHROMA_SERVER_URL no encontrada.")
+except Exception as e:
+    logger.error(f"Error al inicializar el cliente de ChromaDB: {e}")
 
 def create_and_store_embeddings(chunks: list[str], chat_id: str):
     """
